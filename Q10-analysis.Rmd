@@ -1,0 +1,203 @@
+---
+title: "Q10 of Ra-Rh dominate sites analysis"
+author: "Jinshi"
+date: "4/18/2019"
+output: html_document
+---
+
+
+```{r preliminaries, message=FALSE, include=FALSE, echo=FALSE}
+# Set chunks defaults; these options will be applied to all subsequent chunks
+knitr::opts_chunk$set(results = 'hide', message = TRUE, include = TRUE, echo = FALSE,
+                      fig.height = 4.5, fig.width = 8)
+
+# Constants
+OUTPUT_DIR		<- "outputs/"
+LOG_DIR			<- "logs/"
+SEPARATOR		<- "-------------------------------------------"
+
+DATA_DIR <- 'data'
+
+
+# Create output and log folders if they do not exist
+if(!file.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR)
+if(!file.exists(LOG_DIR)) dir.create( LOG_DIR )
+
+# install.packages('cowplot')
+# Load required packages
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+library(lubridate)
+library(kableExtra)
+library(cowplot)
+library(knitr)
+library("ggpubr")
+library(reshape)
+library(ggplot2)
+# install.packages("ggmap")
+library(ggmap)
+# install.packages("maps")
+library(maps)
+# install.packages("mapdata")
+library(mapdata)
+
+# Source all needed functions
+source('functions.R')
+```
+
+
+
+```{r}
+# input data
+srdb_v4 <- read.csv(paste0(DATA_DIR,'/', 'srdbv4.csv'), header = T)
+MGRsD <- read.csv(paste0(DATA_DIR,'/', "SRDBMonthlyRaRhModelling.csv"), header=T)
+DGRhRa <- read.csv(paste0(DATA_DIR,'/', "DGRhRaD.csv"), header = T)
+```
+
+
+
+```{r, fig.height=6, fig.width=8}
+# test Q10 under Ra and Rh dominant sites
+Q10_1 <- Q10_test(srdb_v4, 'Q10_0_10', expression(A~(0-10~degree~C) ))
+Q10_2 <- Q10_test(srdb_v4, 'Q10_5_15', expression(B~(5-15~degree~C) ))
+Q10_3 <- Q10_test(srdb_v4, 'Q10_10_20', expression(C~(10-20~degree~C) ))
+Q10_4 <- Q10_test(srdb_v4, 'Q10_0_20', expression(D~(0-20~degree~C) ))
+
+plot_grid(Q10_1, Q10_2, Q10_3, Q10_4, ncol = 2)  
+
+```
+
+
+```{r}
+srdb_sub <- rbind(filtration (srdb_v4, 'Q10_0_10', 'RC_annual'),
+                  filtration (srdb_v4, 'Q10_5_15', 'RC_annual'),
+                  filtration (srdb_v4, 'Q10_10_20', 'RC_annual'),
+                  filtration (srdb_v4, 'Q10_0_20', 'RC_annual')
+                  )
+```
+
+
+```{r}
+ggplot(aes(RC_annual, Q10, col = Q10_type), data = srdb_sub) + geom_point( shape = 1) +
+  geom_smooth( aes(RC_annual, Q10), method = 'lm', se = FALSE ) + 
+  ylim (0, 7.5) 
+# why change order and name of legend not work here?
+  # scale_fill_discrete(name='Q10 group', breaks = c('Q10_0_10', 'Q10_5_15', 'Q10_10_20', 'Q10_0_20')
+  #                     , labels = c('Q10_0_10', 'Q10_5_15', 'Q10_10_20', 'Q10_0_20')
+  #                     )
+```
+
+
+```{r}
+srdb_sub <- rbind(Q10_RC_drought (srdb_v4, 'Q10_0_10', 'SPI', 'RC_annual'),
+                  Q10_RC_drought (srdb_v4, 'Q10_0_10', 'pdsi', 'RC_annual')
+                  )
+
+ggplot(aes(Drought, Q10, col = Ra_Rh_dom), data = srdb_sub ) + geom_point(alpha = 0.25) + geom_smooth(method = "lm" ) +
+  facet_grid(Drought_label ~ Leaf_habit)
+
+```
+
+```{r}
+worldMap <- map_data(map="world")
+siteInfor <- summarySE (data=MGRsD, measurevar='RS_Norm', groupvars=c("Latitude","Longitude"))
+siteInfor <- siteInfor[, c(1:3)]
+siteInfor <- siteInfor[which(!is.na(siteInfor$Latitude)),]
+
+sitemap <- ggplot(data = worldMap) + 
+  geom_polygon(aes(x = long, y = lat , fill = region , group = group, alpha = 0.5), color = "white") + 
+  coord_fixed(1.3) +
+  theme(axis.text.y   = element_text(size=12),
+        axis.text.x   = element_text(size=12),
+        
+        axis.title.y   = element_text(size=13, margin = margin(t = 0, r = 12, b = 0, l = 0)),
+        axis.title.x   = element_text(size=13, margin = margin(t = 12, r = 0, b = 0, l = 0)),
+        
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.25))+
+  theme(legend.position="none")+
+  scale_x_continuous(name="Longitude", breaks=seq(-180,180, 30),labels = seq(-180,180, 30))+
+  scale_y_continuous(name="Latitude", limits = c(-60,90),breaks=seq(-90,90,15),labels = seq(-90,90,15))+
+  
+  geom_point(data = siteInfor, aes(x=siteInfor$Longitude, y=siteInfor$Latitude), color = "black"
+             , size = mean(siteInfor$N)*0.1 + siteInfor$N*0.05, alpha = 7/10) + 
+  guides(fill=FALSE)  # do this to leave off the color legend
+
+print(sitemap)
+```
+
+```{r}
+MGrsD_Rh <- nls(Rh ~ (R) * exp(Q * Tm) 
+                    , data = MGRsD, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+
+summary(MGrsD_Rh)
+Q10_Rh_M <- exp(0.031111*(10+10)) / exp(0.031111*10)
+
+# MGRsD-Ra_root
+MGRsD_Ra <- nls(Ra_root ~ (R) * exp(Q * Tm) 
+                    , data = MGRsD, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+
+summary(MGRsD_Ra)
+Q10_Ra_M <- exp(0.046949*(10+10)) / exp(0.046949*10)
+
+
+# DGRsD-Rh **************************************************
+DGrsD_Rh <- nls(Rh ~ (R) * exp(Q * Tsoil.C.) 
+                , data = DGRhRa, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+
+summary(DGrsD_Rh)
+Q10_Rh_D <- exp(0.032121*(10+10)) / exp(0.032121*10)
+
+# DGRsD-Ra_root
+DGRsD_Ra <- nls(Ra_root ~ (R) * exp(Q * Tsoil.C.) 
+                , data = DGRhRa, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+
+summary(DGRsD_Ra)
+Q10_Ra_D <- exp(0.059111*(10+10)) / exp(0.059111*10)
+```
+
+```{r}
+# Step 4: modeling and calculate Q10
+# colnames(MGRsD)
+RhRa_M <- function (sdata) {
+  sub_Rh <- subset(sdata, !is.na(Rh), select = c(StudyNumber, Rh, Tm ))
+  sub_Rh$Source <- "MGRsD_TA"
+  sub_Rh$Rs_comp <- "Rh"
+  colnames(sub_Rh) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+
+  sub_Ra <- subset(sdata, !is.na(Ra_root), select = c(StudyNumber, Ra_root, Tm))
+  sub_Ra$Source <- "MGRsD_TA"
+  sub_Ra$Rs_comp <- "Ra"
+  colnames(sub_Ra) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+  
+  sub_Rh_Ra <- rbind(sub_Rh, sub_Ra)
+  return(sub_Rh_Ra)
+}
+
+RhRa_M(MGRsD)
+
+# colnames(DGRhRa)
+RhRa_D <- function (sdata) {
+  sub_Rh <- subset(sdata, !is.na(Rh), select = c(StudyNumber, Rh, Tsoil.C. ))
+  sub_Rh$Source <- "DGRsD_TS"
+  sub_Rh$Rs_comp <- "Rh"
+  colnames(sub_Rh) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+  
+  sub_Ra <- subset(sdata, !is.na(Ra_root), select = c(StudyNumber, Ra_root, Tsoil.C.))
+  sub_Ra$Source <- "DGRsD_TS"
+  sub_Ra$Rs_comp <- "Ra"
+  colnames(sub_Ra) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+  
+  sub_Rh_Ra <- rbind(sub_Rh, sub_Ra)
+  return(sub_Rh_Ra)
+}
+```
+
+
+
