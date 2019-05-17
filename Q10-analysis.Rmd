@@ -44,6 +44,8 @@ library(maps)
 # install.packages("mapdata")
 library(mapdata)
 
+library(tidyr)
+
 # Source all needed functions
 source('functions.R')
 ```
@@ -52,21 +54,25 @@ source('functions.R')
 
 ```{r}
 # input data
-srdb_v4 <- read.csv(paste0(DATA_DIR,'/', 'srdbv4.csv'), header = T)
-MGRsD <- read.csv(paste0(DATA_DIR,'/', "SRDBMonthlyRaRhModelling.csv"), header=T)
-DGRhRa <- read.csv(paste0(DATA_DIR,'/', "DGRhRaD.csv"), header = T)
+srdb_v4 <- read.csv(paste0(DATA_DIR,'/', 'srdbv4.csv'), header = T) # SRDB_V4 data
+MGRsD <- read.csv(paste0(DATA_DIR,'/', "MGRsDAllData.csv"), header=T) # MGRsD data
+DGRhRa <- read.csv(paste0(DATA_DIR,'/', "DGRhRaD.csv"), header = T) #Daily time scale global Rh, Ra, and Q10 of Rh, Ra dataset
+
+HGRsD <- read.csv(paste0(DATA_DIR,'/', "HGRsD_OriginalData.csv"), header = T) # Global hourly time scale Rs data
+HGRsD$DN <- ifelse (is.na(HGRsD$TimeLable), 'NotA', ifelse(HGRsD$TimeLable >=7 & HGRsD$TimeLable <= 18, 'Day', 'Night') )
+# sort(unique(DGRhRa$StudyNumber))
 ```
 
 
 
 ```{r, fig.height=6, fig.width=8}
 # test Q10 under Ra and Rh dominant sites
-Q10_1 <- Q10_test(srdb_v4, 'Q10_0_10', expression(A~(0-10~degree~C) ))
-Q10_2 <- Q10_test(srdb_v4, 'Q10_5_15', expression(B~(5-15~degree~C) ))
-Q10_3 <- Q10_test(srdb_v4, 'Q10_10_20', expression(C~(10-20~degree~C) ))
-Q10_4 <- Q10_test(srdb_v4, 'Q10_0_20', expression(D~(0-20~degree~C) ))
-
-plot_grid(Q10_1, Q10_2, Q10_3, Q10_4, ncol = 2)  
+plot_grid(
+    Q10_test(srdb_v4, 'Q10_0_10', expression(A~(0-10~degree~C) )),
+    Q10_test(srdb_v4, 'Q10_5_15', expression(B~(5-15~degree~C) )),
+    Q10_test(srdb_v4, 'Q10_10_20', expression(C~(10-20~degree~C) )),
+    Q10_test(srdb_v4, 'Q10_0_20', expression(D~(0-20~degree~C) )),
+ncol = 2)  
 
 ```
 
@@ -96,19 +102,140 @@ srdb_sub <- rbind(Q10_RC_drought (srdb_v4, 'Q10_0_10', 'SPI', 'RC_annual'),
                   Q10_RC_drought (srdb_v4, 'Q10_0_10', 'pdsi', 'RC_annual')
                   )
 
-ggplot(aes(Drought, Q10, col = Ra_Rh_dom), data = srdb_sub ) + geom_point(alpha = 0.25) + geom_smooth(method = "lm" ) +
+# srdb_sub <- srdb_sub[!is.na(srdb_sub$Ra_Rh_dom), ]
+
+ggplot(aes(Drought, Q10, col = Ecosystem_type), data = srdb_sub ) + geom_point(alpha = 0.25) + geom_smooth(method = "lm" ) +
+  facet_grid(Drought_label ~ Leaf_habit)
+```
+
+```{r}
+srdb_sub <- rbind(Q10_RC_drought (srdb_v4, 'Q10_5_15', 'SPI', 'RC_annual'),
+                  Q10_RC_drought (srdb_v4, 'Q10_5_15', 'pdsi', 'RC_annual')
+                  )
+
+ggplot(aes(Drought, Q10, col = Ecosystem_type), data = srdb_sub ) + geom_point(alpha = 0.25) + geom_smooth(method = "lm" ) +
   facet_grid(Drought_label ~ Leaf_habit)
 
 ```
 
 ```{r}
+srdb_sub <- rbind(Q10_RC_drought (srdb_v4, 'Q10_10_20', 'SPI', 'RC_annual'),
+                  Q10_RC_drought (srdb_v4, 'Q10_10_20', 'pdsi', 'RC_annual')
+                  )
+
+ggplot(aes(Drought, Q10, col = Ecosystem_type), data = srdb_sub ) + geom_point(alpha = 0.25) + geom_smooth(method = "lm" ) +
+  facet_grid(Drought_label ~ Leaf_habit)
+
+```
+
+---
+title: "rcq10"
+author: "BBL"
+date: "4/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+srdb_v4 %>% 
+  as_tibble() %>% 
+  select(RC_annual, Biome, Leaf_habit, starts_with("Q10")) -> 
+  srdb_v4
+srdb_v4 %>% 
+  select(RC_annual, Biome, Leaf_habit, Q10_0_10, Q10_5_15, Q10_0_20, Q10_10_20) %>% 
+  gather(Label, Q10, starts_with("Q10")) ->
+  srdb_v4_standard
+srdb_v4 %>% 
+  select(RC_annual, Biome, Leaf_habit, Q10 = Q10_other1, Q10_other1_temp_min, Q10_other1_temp_max) %>% 
+  mutate(Label = paste("Q10", Q10_other1_temp_min, Q10_other1_temp_max, sep = "_")) %>% 
+  select(-Q10_other1_temp_min, -Q10_other1_temp_max) ->
+  srdb_v4_custom1
+srdb_v4 %>% 
+  select(RC_annual, Biome, Leaf_habit, Q10 = Q10_other2, Q10_other2_temp_min, Q10_other2_temp_max) %>% 
+  mutate(Label = paste("Q10", Q10_other2_temp_min, Q10_other2_temp_max, sep = "_")) %>% 
+  select(-Q10_other2_temp_min, -Q10_other2_temp_max) ->
+  srdb_v4_custom2
+bind_rows(srdb_v4_standard, srdb_v4_custom1, srdb_v4_custom2) %>% 
+  filter(!is.na(RC_annual), !is.na(Q10)) %>% 
+  separate(Label, sep = "_", into = c("X", "temp_low", "temp_high"), convert = TRUE) %>% 
+  mutate(Temp_avg = (temp_low + temp_high) / 2,
+        RC_group = cut(RC_annual, c(-0.1, 0.5, 1.0), labels = c("Heterotrophic", "Autotrophic")),
+        Leaf_habit = factor(Leaf_habit, levels = c("Deciduous", "Mixed", "Evergreen"))) ->
+  srdb_v4_q10
+```
+
+Still just playing around.
+
+
+```{r plot2}
+srdb_v4_q10 %>% 
+  group_by(RC_group) %>% 
+  summarise(Q10 = median(Q10)) -> 
+  lbls
+ggplot(srdb_v4_q10, aes(x = Q10, color = RC_group)) + 
+  geom_density(size = 1) + 
+  ggtitle(paste("N =", nrow(srdb_v4_q10))) + 
+  geom_vline(data=lbls, aes(xintercept = Q10, color = RC_group), linetype = 2)
+ggplot(srdb_v4_q10, aes(RC_annual, Q10, color = Leaf_habit)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  ggtitle(paste("N =", nrow(srdb_v4_q10)))
+ggplot(srdb_v4_q10, aes(Temp_avg, Q10)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  facet_wrap(~Leaf_habit)
+```
+
+And
+
+```{r}
+srdb_v4_q10 %>% 
+  filter(RC_annual > 0) %>% 
+  group_by(Leaf_habit, RC_group) %>% 
+  summarise(Q10 = paste(round(median(Q10), 2), "N =", n())) %>% 
+  spread(RC_group, Q10) %>% 
+  kableExtra::kable()
+```
+
+Treating RC as a continuous variable:
+
+```{r}
+m1 <- lm(Q10 ~ Leaf_habit * Temp_avg * RC_annual, data = srdb_v4_q10)
+#car::Anova(m1, type = "III")
+m1_red <- MASS::stepAIC(m1, direction = "both", trace = 0)
+car::Anova(m1_red, type = "III")
+summary(m1_red)
+```
+
+Treating RC as a group (heterotrophic and autotrohic):
+
+```{r}
+m2 <- lm(Q10 ~ Leaf_habit * Temp_avg * RC_group, data = srdb_v4_q10)
+#car::Anova(m2, type = "III")
+m2_red <- MASS::stepAIC(m2, direction = "both", trace = 0)
+car::Anova(m2_red, type = "III")
+summary(m2_red)
+```
+
+
+
+
+
+
+
+
+
+* Test using data from MGRsD
+
+```{r}
+# plot sites distribution of MGRsD
 worldMap <- map_data(map="world")
-siteInfor <- summarySE (data=MGRsD, measurevar='RS_Norm', groupvars=c("Latitude","Longitude"))
+siteInfor <- summarySE (data=MGRsD, measurevar='Rs_Norm', groupvars=c("Latitude","Longitude"))
 siteInfor <- siteInfor[, c(1:3)]
 siteInfor <- siteInfor[which(!is.na(siteInfor$Latitude)),]
+siteInfor$N <- siteInfor$N*0.25
 
 sitemap <- ggplot(data = worldMap) + 
-  geom_polygon(aes(x = long, y = lat , fill = region , group = group, alpha = 0.5), color = "white") + 
+  geom_polygon(aes(x = long, y = lat , fill = region , group = group, alpha = 0.1), color = "white") + 
   coord_fixed(1.3) +
   theme(axis.text.y   = element_text(size=12),
         axis.text.x   = element_text(size=12),
@@ -125,7 +252,7 @@ sitemap <- ggplot(data = worldMap) +
   scale_x_continuous(name="Longitude", breaks=seq(-180,180, 30),labels = seq(-180,180, 30))+
   scale_y_continuous(name="Latitude", limits = c(-60,90),breaks=seq(-90,90,15),labels = seq(-90,90,15))+
   
-  geom_point(data = siteInfor, aes(x=siteInfor$Longitude, y=siteInfor$Latitude), color = "black"
+  geom_point(data = siteInfor, aes(x=siteInfor$Longitude, y=siteInfor$Latitude), color = "blue"
              , size = mean(siteInfor$N)*0.1 + siteInfor$N*0.05, alpha = 7/10) + 
   guides(fill=FALSE)  # do this to leave off the color legend
 
@@ -133,70 +260,226 @@ print(sitemap)
 ```
 
 ```{r}
-MGrsD_Rh <- nls(Rh ~ (R) * exp(Q * Tm) 
-                    , data = MGRsD, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+MGRsD_Rh <- nls(Rh_Norm ~ (R) * exp(Q * Tsoil) 
+                    , data = DGRhRa, start = list(R = 1.4, Q = 0.035), trace = TRUE)
 
-summary(MGrsD_Rh)
-Q10_Rh_M <- exp(0.031111*(10+10)) / exp(0.031111*10)
+summary(MGRsD_Rh)
+exp(0.041294*(10)) 
 
 # MGRsD-Ra_root
-MGRsD_Ra <- nls(Ra_root ~ (R) * exp(Q * Tm) 
-                    , data = MGRsD, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+MGRsD_Ra <- nls(Ra_Norm ~ (R) * exp(Q * Tsoil) 
+                    , data = DGRhRa, start = list(R = 1.4, Q = 0.035), trace = TRUE)
 
 summary(MGRsD_Ra)
-Q10_Ra_M <- exp(0.046949*(10+10)) / exp(0.046949*10)
+exp(0.064298*10)
+```
 
 
-# DGRsD-Rh **************************************************
-DGrsD_Rh <- nls(Rh ~ (R) * exp(Q * Tsoil.C.) 
-                , data = DGRhRa, start = list(R = 1.4, Q = 0.035), trace = TRUE)
 
-summary(DGrsD_Rh)
-Q10_Rh_D <- exp(0.032121*(10+10)) / exp(0.032121*10)
+```{r}
+# Tsoil and Tm_Del vs. Rh and Ra comparison
+# colnames(DGRhRa)
+RhRa_TDel <- function (sdata) {
+  sub_Rh <- subset(sdata, !is.na(Rh_Norm), select = c(StudyNumber, Rh_Norm, Tm_Del ))
+  sub_Rh$Source <- "DGRsD_TDel"
+  sub_Rh$Rs_comp <- "Rh"
+  colnames(sub_Rh) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
 
-# DGRsD-Ra_root
-DGRsD_Ra <- nls(Ra_root ~ (R) * exp(Q * Tsoil.C.) 
-                , data = DGRhRa, start = list(R = 1.4, Q = 0.035), trace = TRUE)
+  sub_Ra <- subset(sdata, !is.na(Ra_Norm), select = c(StudyNumber, Ra_Norm, Tm_Del))
+  sub_Ra$Source <- "DGRsD_TDel"
+  sub_Ra$Rs_comp <- "Ra"
+  colnames(sub_Ra) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+  
+  sub_Rh_Ra <- rbind(sub_Rh, sub_Ra)
+  return(sub_Rh_Ra)
+}
 
-summary(DGRsD_Ra)
-Q10_Ra_D <- exp(0.059111*(10+10)) / exp(0.059111*10)
+# 
+RhRa_Tsoil <- function (sdata) {
+  sub_Rh <- subset(sdata, !is.na(Rh_Norm), select = c(StudyNumber, Rh_Norm, Tsoil ))
+  sub_Rh$Source <- "DGRsD_Tsoil"
+  sub_Rh$Rs_comp <- "Rh"
+  colnames(sub_Rh) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+  
+  sub_Ra <- subset(sdata, !is.na(Ra_Norm), select = c(StudyNumber, Ra_Norm, Tsoil))
+  sub_Ra$Source <- "DGRsD_Tsoil"
+  sub_Ra$Rs_comp <- "Ra"
+  colnames(sub_Ra) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+  
+  sub_Rh_Ra <- rbind(sub_Rh, sub_Ra)
+  return(sub_Rh_Ra)
+}
+
+RhRa_T <- rbind(RhRa_TDel(DGRhRa), RhRa_Tsoil(DGRhRa)) 
+
+Q10_plot <- ggplot(aes(Tm, Rs), data = RhRa_MD) + geom_point(col=alpha("black", 0.25)) + 
+  facet_grid(Source ~ Rs_comp)
+print(Q10_plot)
+
+```
+
+
+
+
+```{r}
+qplot(Tm_Del, Tsoil, data = subset(DGRhRa, DGRhRa$Tm_Del > (-25)))
+# subset(DGRhRa, DGRhRa$Tsoil>0 & DGRhRa$Tm_Del< (-25), select = c(StudyNumber, Tsoil, Tm_Del)) #1304 November
+summary(lm(Tsoil~Tm_Del, data = subset(DGRhRa, DGRhRa$Tm_Del > (-25)) ))
+
+subset(DGRhRa, is.na(DGRhRa$Tsoil)) %>% nrow() # 696 NA Tsoil
+```
+
+
+
+
+```{r}
+# subset(DGRhRa, DGRhRa$Tsoil>0 & DGRhRa$Tm_Del< (-25), select = c(StudyNumber, Tsoil, Tm_Del)) #1304 November
+nrow(subset(MGRsD, is.na(MGRsD$TS))) # 3239 NA Tsoil
+nrow(subset(MGRsD, MGRsD$Latitude < 0)) # 974 North hetmosphere data
+subset(MGRsD, is.na(IGBP_FromPaper)) %>% nrow()
+MGRsD[MGRsD$TS>30 & MGRsD$Tm < 0 & !is.na(MGRsD$TS),]$TS <- MGRsD[MGRsD$TS>30 & MGRsD$Tm < 0 & !is.na(MGRsD$TS),]$Tm
+qplot(Tm, TS, data = MGRsD)
+summary(lm(TS~Tm, data = MGRsD ))
+```
+
+
+
+```{r, include=FALSE}
+Q10_Rs_Ra_Rh <- Q10_cal(DGRhRa)
+```
+
+
+
+```{r}
+# compare calculated mean Q10 of Rs, Rh, and Ra with reported from paper
+nrow(Q10_Rs_Ra_Rh)
+min(Q10_Rs_Ra_Rh$obs)
+
+max(Q10_Rs_Ra_Rh$Q10_Rs_Paper, na.rm = TRUE)
+min(Q10_Rs_Ra_Rh$Q10_Rs_Paper, na.rm = TRUE)
+
+max(Q10_Rs_Ra_Rh$Q10_Rh_Paper, na.rm = TRUE)
+min(Q10_Rs_Ra_Rh$Q10_Rh_Paper, na.rm = TRUE)
+
+max(Q10_Rs_Ra_Rh$Q10_Ra_Paper, na.rm = TRUE)
+min(Q10_Rs_Ra_Rh$Q10_Ra_Paper, na.rm = TRUE)
+
+mean(Q10_Rs_Ra_Rh$Q10_Rs, na.rm = TRUE)
+mean(Q10_Rs_Ra_Rh$Q10_Rs_Paper, na.rm = TRUE)
+
+mean(Q10_Rs_Ra_Rh$Q10_Rh, na.rm = TRUE)
+mean(Q10_Rs_Ra_Rh$Q10_Rh_Paper, na.rm = TRUE)
+
+mean(Q10_Rs_Ra_Rh[Q10_Rs_Ra_Rh$Q10_Ra < 20,]$Q10_Ra, na.rm = TRUE)
+mean(Q10_Rs_Ra_Rh$Q10_Ra_Paper, na.rm = TRUE)
+```
+
+
+```{r}
+qplot(data = Q10_Rs_Ra_Rh, p_Q, geom = 'histogram')
+qplot(data = Q10_Rs_Ra_Rh, p_Q_Rh, geom = 'histogram')
+qplot(data = Q10_Rs_Ra_Rh, p_Q_Ra, geom = 'histogram')
+
+qplot(data = Q10_Rs_Ra_Rh, Q10_Rs, geom = 'histogram')
+qplot(data = Q10_Rs_Ra_Rh, Q10_Rh, geom = 'histogram')
+qplot(data = Q10_Rs_Ra_Rh, Q10_Ra, geom = 'histogram')
+```
+
+
+
+
+
+```{r, fig.width=12, fig.height=4}
+# Some studies' calculated Q10 > 10, check by study
+check_outler(DGRhRa, 177)
+check_outler(DGRhRa, 1304)
+check_outler(DGRhRa, 3561)
+check_outler(DGRhRa, 3921)
+check_outler(DGRhRa, 4062)
+check_outler(DGRhRa, 4159)
+check_outler(DGRhRa, 4166)
+```
+
+
+```{r, fig.width=12, fig.height=4}
+# Compare reported Q10 vs. calculated Q10 
+plot_grid(qplot(Q10_Rs, Q10_Rs_Paper, data = Q10_Rs_Ra_Rh) + geom_abline(slope = 1, intercept = 0) + geom_smooth(method = "lm") + xlim (0,10)
+    ,qplot(Q10_Rh, Q10_Rh_Paper, data = Q10_Rs_Ra_Rh) + geom_abline(slope = 1, intercept = 0) + geom_smooth(method = "lm") + xlim (0,10)
+    ,qplot(Q10_Ra, Q10_Ra_Paper, data = subset(Q10_Rs_Ra_Rh, Q10_Rs_Ra_Rh$Q10_Ra < 20)) + xlim (0,10) + 
+        geom_abline(slope = 1, intercept = 0) + geom_smooth(method = "lm")
+    , ncol = 3
+    )
+
+```
+
+
+```{r}
+# summary of Rs, Rh, and Ra observations from DGRhRa dataset
+nrow(Q10_Rs_Ra_Rh) # 252 sites
+length(unique(Q10_Rs_Ra_Rh$var_Study.i.)) # 149 papers
+
+nrow( subset(Q10_Rs_Ra_Rh, !is.na(Q10_Rs_Ra_Rh$Q10_Rs)))
+nrow( subset(Q10_Rs_Ra_Rh, !is.na(Q10_Rs_Ra_Rh$Q10_Rs_Paper)))
+
+nrow( subset(Q10_Rs_Ra_Rh, !is.na(Q10_Rs_Ra_Rh$Q10_Rh)) )
+nrow( subset(Q10_Rs_Ra_Rh, !is.na(Q10_Rs_Ra_Rh$Q10_Rh_Paper)) )
+
+nrow( subset(Q10_Rs_Ra_Rh, !is.na(Q10_Rs_Ra_Rh$Q10_Ra)) )
+nrow( subset(Q10_Rs_Ra_Rh, !is.na(Q10_Rs_Ra_Rh$Q10_Ra_Paper)) )
+
+```
+
+* Q10 of Ra larger than Q10 of Rh, both reported Q10 and calculated Q10 resulted similar results
+```{r, fig.height=9, fig.width=8}
+Q10_comparison (Q10_Rs_Ra_Rh)
+```
+
+* Q10 show no significant difference among partition method (need further statistic test)
+* 'Bare soil' method tend to has lower [(heterotrophic respiration)/(total respiration ratio)] (HC) 
+* ‘Trench' tend to has higher HC
+```{r, fig.height=9, fig.width=9}
+# Plot Q10 
+RhRa_partition (Q10_Rs_Ra_Rh, DGRhRa)
+```
+
+* Q10 show no significant difference among Biome groups
+* Bare sparsed vegetation (BSV) has higher HC
+* Tundra has lower HC
+
+```{r, fig.height=9, fig.width=9}
+# Plot Q10 
+RhRa_biome (Q10_Rs_Ra_Rh, DGRhRa)
+```
+
+
+* HC dynamic within 12 months shows that grassland and savanna tend to have higher HC in winter (but not significant? need future statistic test)
+
+```{r, fig.height=12, fig.width=6}
+RhRa_month(DGRhRa)
+```
+
+* Rs in spring and winter is more sensitive to temperature change than in summer and fall in almost all Biomes
+```{r, fig.height=6, fig.width=12}
+# how to add slope information and Q10 in each panel
+Q10_Season_Biome(MGRsD)
+```
+
+* Rs is more sensitive to temperature change in nighttime than in daytime
+```{r}
+# Using HGRsD test day and night time Q10
+HGRsD_DayNight_test (HGRsD)
+```
+
+```{r, include=FALSE}
+Q10_DN_site <- Q10_DayNight_byStudy (HGRsD)
 ```
 
 ```{r}
-# Step 4: modeling and calculate Q10
-# colnames(MGRsD)
-RhRa_M <- function (sdata) {
-  sub_Rh <- subset(sdata, !is.na(Rh), select = c(StudyNumber, Rh, Tm ))
-  sub_Rh$Source <- "MGRsD_TA"
-  sub_Rh$Rs_comp <- "Rh"
-  colnames(sub_Rh) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
+Q10_DN_Comp(Q10_DN_site)
+```
 
-  sub_Ra <- subset(sdata, !is.na(Ra_root), select = c(StudyNumber, Ra_root, Tm))
-  sub_Ra$Source <- "MGRsD_TA"
-  sub_Ra$Rs_comp <- "Ra"
-  colnames(sub_Ra) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
-  
-  sub_Rh_Ra <- rbind(sub_Rh, sub_Ra)
-  return(sub_Rh_Ra)
-}
-
-RhRa_M(MGRsD)
-
-# colnames(DGRhRa)
-RhRa_D <- function (sdata) {
-  sub_Rh <- subset(sdata, !is.na(Rh), select = c(StudyNumber, Rh, Tsoil.C. ))
-  sub_Rh$Source <- "DGRsD_TS"
-  sub_Rh$Rs_comp <- "Rh"
-  colnames(sub_Rh) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
-  
-  sub_Ra <- subset(sdata, !is.na(Ra_root), select = c(StudyNumber, Ra_root, Tsoil.C.))
-  sub_Ra$Source <- "DGRsD_TS"
-  sub_Ra$Rs_comp <- "Ra"
-  colnames(sub_Ra) <- c("StudyNumber", "Rs", "Tm", "Source", "Rs_comp")
-  
-  sub_Rh_Ra <- rbind(sub_Rh, sub_Ra)
-  return(sub_Rh_Ra)
-}
+```{r, fig.width=3, fig.height=8}
+Q10_DN_Biome(Q10_DN_site)
 ```
 
 
