@@ -39,7 +39,7 @@ rsconnect/
 # Script products
 logs/
 outputs/
-Data/
+data/
 
 # OS files
 .DS_Store
